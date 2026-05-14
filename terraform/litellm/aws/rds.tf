@@ -41,8 +41,14 @@ resource "aws_rds_cluster" "this" {
 
   iam_database_authentication_enabled = true
   storage_encrypted                   = true
-  skip_final_snapshot                 = true
   apply_immediately                   = true
+
+  # Final-snapshot guard. With the safe default (skip_final_snapshot = false),
+  # `terraform destroy` takes a snapshot named `<cluster>-final-<short-sha>`
+  # before dropping the cluster. The short SHA disambiguates repeated
+  # destroy/recreate cycles so each snapshot has a unique name.
+  skip_final_snapshot       = var.skip_final_snapshot
+  final_snapshot_identifier = var.skip_final_snapshot ? null : "${var.name}-final-${substr(md5(var.name), 0, 8)}"
 
   backup_retention_period = 7
   preferred_backup_window = "07:00-09:00"

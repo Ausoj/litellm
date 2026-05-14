@@ -4,7 +4,7 @@ Deploys the componentized LiteLLM proxy on AWS:
 
 - **VPC** with public + private subnets across the AZs you pass in, one NAT gateway
 - **Aurora Postgres** cluster — one writer instance + one reader instance, **IAM database authentication enabled**
-- **ElastiCache Redis** (private) for caching + rate limiting
+- **ElastiCache Redis** (private, replication group with multi-AZ failover and at-rest + in-transit encryption) for caching + rate limiting
 - **S3 bucket** (private, versioned, SSE-S3) — exposed to gateway + backend as `S3_BUCKET_NAME` / `S3_REGION_NAME` for cache backend, request log archival, and `/v1/files` storage
 - **Secrets Manager** entries for `LITELLM_MASTER_KEY` (auto-generated, `sk-…`) and the Aurora master password (bootstrap-only)
 - **ECS Fargate cluster** running three services — `gateway`, `backend`, `ui`
@@ -158,14 +158,20 @@ which is anonymous-readable. To pull from a private registry:
   in Secrets Manager and set `repositoryCredentials.credentialsParameter`
   on the task def container — extend `ecs.tf` accordingly.
 
-## Adding TLS
+## TLS
 
-The ALB listens on plain HTTP/80 by default. To add HTTPS:
+The ALB defaults to HTTP-only because trial deployments don't yet have a
+DNS name to attach a cert to. **For any non-trial use, provide an ACM
+certificate** — every API request (including the `Authorization: Bearer
+sk-...` master key) is otherwise sent in plaintext over port 80.
 
-1. Create or import an ACM cert in `var.region`.
-2. Add an `aws_lb_listener` for port 443 forwarding to the same default
-   action and rules — or replace `aws_lb_listener.http` with a listener
-   that redirects 80 → 443 plus a 443 listener carrying the existing rules.
+1. Create or import an ACM cert in `var.region` covering the DNS name you
+   plan to point at the ALB.
+2. Set `acm_certificate_arn = "arn:aws:acm:..."` in tfvars and apply.
+
+Result: a 443 listener carries the path-routing rules; the 80 listener
+serves a permanent 301 redirect to HTTPS, so any plaintext clients are
+automatically upgraded.
 
 ## Files
 

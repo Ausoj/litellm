@@ -4,8 +4,14 @@
 #   - UI asset paths → ui
 #   - Everything else → backend (management API: /key/*, /user/*, …)
 #
-# The LB exposes plain HTTP on port 80 by default. Add an
-# google_compute_managed_ssl_certificate + 443 forwarding rule to layer TLS.
+# By default the LB serves plain HTTP on port 80. Set var.lb_domains to a
+# list of DNS names already pointing at lb_ip and the stack provisions a
+# Google-managed SSL cert + 443 forwarding rule, and the 80 forwarding rule
+# is rewritten to redirect HTTP→HTTPS via a redirect-only URL map.
+
+locals {
+  tls_enabled = length(var.lb_domains) > 0
+}
 
 resource "google_compute_global_address" "lb" {
   name = "${var.name}-lb-ip"
@@ -107,9 +113,23 @@ resource "google_compute_url_map" "this" {
   }
 }
 
+# Permanent HTTP→HTTPS redirect URL map. Only attached to the port-80
+# target proxy when TLS is enabled; otherwise the regular path-routing
+# URL map is attached to the HTTP proxy and everything stays plaintext.
+resource "google_compute_url_map" "https_redirect" {
+  count = local.tls_enabled ? 1 : 0
+  name  = "${var.name}-redirect"
+
+  default_url_redirect {
+    https_redirect         = true
+    redirect_response_code = "MOVED_PERMANENTLY_DEFAULT"
+    strip_query            = false
+  }
+}
+
 resource "google_compute_target_http_proxy" "this" {
   name    = "${var.name}-http"
-  url_map = google_compute_url_map.this.id
+  url_map = local.tls_enabled ? google_compute_url_map.https_redirect[0].id : google_compute_url_map.this.id
 }
 
 resource "google_compute_global_forwarding_rule" "http" {
@@ -119,4 +139,38 @@ resource "google_compute_global_forwarding_rule" "http" {
   load_balancing_scheme = "EXTERNAL_MANAGED"
   ip_address            = google_compute_global_address.lb.address
   target                = google_compute_target_http_proxy.this.id
+}
+
+# ---------- HTTPS (gated on var.lb_domains) ----------
+#
+# Google-managed certs require each listed domain to resolve to lb_ip
+# *before* the cert provisions; on first apply the cert sits in
+# PROVISIONING for ~15-60 min until DNS propagates. The LB starts serving
+# 443 immediately, but cert handshakes fail until the managed cert
+# transitions to ACTIVE.
+
+resource "google_compute_managed_ssl_certificate" "this" {
+  count = local.tls_enabled ? 1 : 0
+  name  = "${var.name}-cert"
+
+  managed {
+    domains = var.lb_domains
+  }
+}
+
+resource "google_compute_target_https_proxy" "this" {
+  count            = local.tls_enabled ? 1 : 0
+  name             = "${var.name}-https"
+  url_map          = google_compute_url_map.this.id
+  ssl_certificates = [google_compute_managed_ssl_certificate.this[0].id]
+}
+
+resource "google_compute_global_forwarding_rule" "https" {
+  count                 = local.tls_enabled ? 1 : 0
+  name                  = "${var.name}-https"
+  ip_protocol           = "TCP"
+  port_range            = "443"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+  ip_address            = google_compute_global_address.lb.address
+  target                = google_compute_target_https_proxy.this[0].id
 }

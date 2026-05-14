@@ -4,8 +4,8 @@ output "alb_dns_name" {
 }
 
 output "alb_url" {
-  description = "HTTP URL for the proxy. The dashboard is served at /, the API at /v1/*."
-  value       = "http://${aws_lb.this.dns_name}"
+  description = "Proxy URL. Switches scheme based on whether acm_certificate_arn is set; the underlying DNS name is the ALB. The dashboard is served at /, the API at /v1/*."
+  value       = "${local.tls_enabled ? "https" : "http"}://${aws_lb.this.dns_name}"
 }
 
 output "ecs_cluster" {
@@ -24,8 +24,8 @@ output "aurora_reader_endpoint" {
 }
 
 output "redis_endpoint" {
-  description = "ElastiCache Redis endpoint."
-  value       = "${aws_elasticache_cluster.this.cache_nodes[0].address}:${aws_elasticache_cluster.this.cache_nodes[0].port}"
+  description = "ElastiCache Redis primary endpoint (TLS, transit_encryption_enabled = true)."
+  value       = "${aws_elasticache_replication_group.this.primary_endpoint_address}:${aws_elasticache_replication_group.this.port}"
 }
 
 output "s3_bucket" {

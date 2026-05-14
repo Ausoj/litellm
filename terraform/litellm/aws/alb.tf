@@ -8,6 +8,13 @@ resource "aws_lb" "this" {
   idle_timeout = 120
 }
 
+locals {
+  # When an ACM cert ARN is provided we provision a 443 listener carrying
+  # the path-routing rules and downgrade the 80 listener to a redirect.
+  tls_enabled        = var.acm_certificate_arn != ""
+  rules_listener_arn = local.tls_enabled ? aws_lb_listener.https[0].arn : aws_lb_listener.http.arn
+}
+
 # Target groups — one per component. IP target type because Fargate tasks
 # are addressed by ENI IP, not instance.
 
@@ -68,13 +75,39 @@ resource "aws_lb_target_group" "ui" {
   deregistration_delay = 30
 }
 
-# HTTP listener. The default action is the backend (management API), and we
-# add higher-priority rules that route UI assets to the UI target group and
-# LLM data-plane prefixes to the gateway.
+# HTTP listener. When TLS is enabled this only serves a permanent
+# 301 redirect to HTTPS; otherwise it carries the path-routing rules
+# (default → backend) and traffic flows in plaintext.
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.this.arn
   port              = 80
   protocol          = "HTTP"
+
+  default_action {
+    type = local.tls_enabled ? "redirect" : "forward"
+
+    dynamic "redirect" {
+      for_each = local.tls_enabled ? [1] : []
+      content {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
+    }
+
+    target_group_arn = local.tls_enabled ? null : aws_lb_target_group.backend.arn
+  }
+}
+
+# HTTPS listener. Only created when an ACM cert ARN is supplied — terminates
+# TLS and carries the same default + path-routing rules.
+resource "aws_lb_listener" "https" {
+  count             = local.tls_enabled ? 1 : 0
+  load_balancer_arn = aws_lb.this.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = var.acm_certificate_arn
 
   default_action {
     type             = "forward"
@@ -84,7 +117,7 @@ resource "aws_lb_listener" "http" {
 
 # UI exact paths (/, /favicon.ico, /ui) — priority 10.
 resource "aws_lb_listener_rule" "ui_exact" {
-  listener_arn = aws_lb_listener.http.arn
+  listener_arn = local.rules_listener_arn
   priority     = 10
 
   action {
@@ -101,7 +134,7 @@ resource "aws_lb_listener_rule" "ui_exact" {
 
 # UI prefix paths (/_next/*, /litellm-asset-prefix/*, /assets/*, /ui/*) — priority 20.
 resource "aws_lb_listener_rule" "ui_prefix" {
-  listener_arn = aws_lb_listener.http.arn
+  listener_arn = local.rules_listener_arn
   priority     = 20
 
   action {
@@ -121,7 +154,7 @@ resource "aws_lb_listener_rule" "ui_prefix" {
 resource "aws_lb_listener_rule" "gateway" {
   for_each = { for idx, chunk in local.gateway_path_chunks : idx => chunk }
 
-  listener_arn = aws_lb_listener.http.arn
+  listener_arn = local.rules_listener_arn
   priority     = 100 + tonumber(each.key)
 
   action {

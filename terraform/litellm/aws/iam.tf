@@ -22,8 +22,13 @@ resource "aws_iam_role_policy_attachment" "task_execution" {
 
 # User-provided extra secrets may be passed as the bare secret ARN
 # ("arn:aws:secretsmanager:...:secret:name-AbCdEf") or the JSON-key form
-# ECS supports ("arn:...:secret:name-AbCdEf:fieldName::"). The IAM policy
-# resource must always be the bare ARN — strip the optional suffix here.
+# ECS supports — fully spelled out as
+# "arn:...:secret:name-AbCdEf:jsonKey:versionStage:versionId" with any of
+# the trailing parts blank ("...:jsonKey::" being the most common). The IAM
+# policy resource must always be the bare ARN, so we split on ':' and keep
+# the first 7 components — robust to any combination of empty/non-empty
+# version-stage/version-id suffixes that a regex would otherwise have to
+# enumerate.
 locals {
   extra_secret_value_froms = concat(
     values(var.gateway_extra_secrets),
@@ -32,7 +37,7 @@ locals {
 
   extra_secret_arns = distinct([
     for v in local.extra_secret_value_froms :
-    regex("^(arn:[^:]+:secretsmanager:[^:]+:[^:]+:secret:[^:]+?)(:[^:]*::)?$", v)[0]
+    join(":", slice(split(":", v), 0, 7))
   ])
 }
 

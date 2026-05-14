@@ -172,6 +172,17 @@ variable "db_tier" {
   default     = "db-custom-2-7680"
 }
 
+variable "db_edition" {
+  description = "Cloud SQL edition. ENTERPRISE accepts the db-custom-* and db-n1-* tiers. ENTERPRISE_PLUS only accepts db-perf-optimized-* tiers and is ~3x cost — change db_tier in lockstep when switching."
+  type        = string
+  default     = "ENTERPRISE"
+
+  validation {
+    condition     = contains(["ENTERPRISE", "ENTERPRISE_PLUS"], var.db_edition)
+    error_message = "db_edition must be ENTERPRISE or ENTERPRISE_PLUS."
+  }
+}
+
 variable "db_version" {
   description = "Cloud SQL Postgres version."
   type        = string
@@ -188,6 +199,27 @@ variable "db_username" {
   description = "Application Postgres user (password-auth). Password is auto-generated and stored in Secret Manager."
   type        = string
   default     = "litellm_app"
+}
+
+variable "lb_domains" {
+  description = <<-EOT
+    DNS names for a Google-managed SSL certificate fronting the LB. When
+    non-empty, the stack provisions a 443 forwarding rule + HTTPS target
+    proxy + managed cert covering these domains, and the existing 80
+    forwarding rule serves a permanent 301 redirect to HTTPS. Leave empty
+    ([]) to keep the HTTP-only LB (acceptable for trial/dev only; every
+    request — including the LiteLLM master key — travels in plaintext).
+    Each domain must already resolve to the LB's anycast IP (`lb_ip`
+    output) for managed-cert provisioning to succeed.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
+variable "cloudsql_deletion_protection" {
+  description = "Cloud SQL instance-level deletion protection (writer + reader). Default true — `terraform destroy` (and `terraform apply` operations that replace the instance) will fail with a clear error rather than silently dropping the database. Set false only for ephemeral / CI environments."
+  type        = bool
+  default     = true
 }
 
 # ---------- Memorystore (Redis) ----------

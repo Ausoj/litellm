@@ -252,6 +252,40 @@ variable "redis_node_type" {
   default     = "cache.t4g.small"
 }
 
+variable "redis_num_replicas" {
+  description = "Number of read replicas in the Redis replication group. The primary plus this many replicas form the cluster — set to 0 for a single-node dev deployment, 1+ for HA. multi_az_enabled and automatic_failover_enabled require >= 1."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.redis_num_replicas >= 0
+    error_message = "redis_num_replicas must be >= 0."
+  }
+}
+
+# ---------- TLS ----------
+
+variable "acm_certificate_arn" {
+  description = <<-EOT
+    ACM certificate ARN for the ALB's HTTPS listener. When set, the stack
+    provisions a 443 listener carrying the same path-routing rules as the 80
+    listener, and the 80 listener is rewritten to redirect HTTP→HTTPS. Leave
+    empty ("") to keep the HTTP-only listener (acceptable for trial/dev only;
+    every request — including the LiteLLM master key — travels in plaintext).
+    See README.md "Adding TLS".
+  EOT
+  type        = string
+  default     = ""
+}
+
+# ---------- RDS ----------
+
+variable "skip_final_snapshot" {
+  description = "Skip the Aurora final snapshot on `terraform destroy`. Default false — destroying the cluster takes a snapshot first so data is recoverable. Set true only for ephemeral / CI environments where you accept permanent data loss on destroy."
+  type        = bool
+  default     = false
+}
+
 # ---------- Extra env ----------
 
 variable "gateway_extra_env" {

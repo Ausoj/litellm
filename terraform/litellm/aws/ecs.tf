@@ -42,8 +42,12 @@ locals {
     { name = "DATABASE_NAME", value = var.db_name },
     { name = "DATABASE_HOST_READ_REPLICA", value = aws_rds_cluster.this.reader_endpoint },
     { name = "DATABASE_PORT_READ_REPLICA", value = tostring(aws_rds_cluster.this.port) },
-    { name = "REDIS_HOST", value = aws_elasticache_cluster.this.cache_nodes[0].address },
-    { name = "REDIS_PORT", value = tostring(aws_elasticache_cluster.this.cache_nodes[0].port) },
+    { name = "REDIS_HOST", value = aws_elasticache_replication_group.this.primary_endpoint_address },
+    { name = "REDIS_PORT", value = tostring(aws_elasticache_replication_group.this.port) },
+    # transit_encryption_enabled = true on the replication group means the
+    # proxy must connect via rediss://. _redis.get_redis_url_from_environment
+    # honors REDIS_SSL to flip the scheme.
+    { name = "REDIS_SSL", value = "true" },
     # S3 bucket — referenced from proxy_config via os.environ/S3_BUCKET_NAME
     # (e.g. cache backend, request log archival, /files passthrough).
     { name = "S3_BUCKET_NAME", value = aws_s3_bucket.this.bucket },
@@ -184,6 +188,7 @@ resource "aws_ecs_service" "gateway" {
   # boots, Prisma fails on the missing tables, and ECS thrashes the task.
   depends_on = [
     aws_lb_listener.http,
+    aws_lb_listener.https,
     terraform_data.migration,
   ]
 }
@@ -255,6 +260,7 @@ resource "aws_ecs_service" "backend" {
 
   depends_on = [
     aws_lb_listener.http,
+    aws_lb_listener.https,
     terraform_data.migration,
   ]
 }
@@ -314,5 +320,8 @@ resource "aws_ecs_service" "ui" {
     ignore_changes = [desired_count]
   }
 
-  depends_on = [aws_lb_listener.http]
+  depends_on = [
+    aws_lb_listener.http,
+    aws_lb_listener.https,
+  ]
 }

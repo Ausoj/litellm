@@ -146,32 +146,24 @@ The `migration_run_command` output is preserved for break-glass manual re-runs.
 required APIs must be enabled (run, sqladmin, redis, secretmanager,
 vpcaccess, compute, servicenetworking, storage, artifactregistry).
 
-## Adding TLS
+## TLS
 
-Replace `google_compute_target_http_proxy` / `google_compute_global_forwarding_rule.http`
-with the HTTPS variants and attach a `google_compute_managed_ssl_certificate`:
+The LB defaults to HTTP-only because trial deployments don't yet have a
+DNS name to attach a Google-managed cert to. **For any non-trial use,
+set `lb_domains`** — every API request (including the `Authorization:
+Bearer sk-...` master key) is otherwise sent in plaintext over port 80.
 
-```hcl
-resource "google_compute_managed_ssl_certificate" "this" {
-  name = "litellm-cert"
-  managed { domains = ["proxy.example.com"] }
-}
+1. `terraform apply` once with `lb_domains = []` to provision the LB and
+   read the anycast IP from `terraform output -raw lb_ip`.
+2. Point each DNS name you want to serve from at that IP.
+3. Set `lb_domains = ["proxy.example.com"]` in tfvars and re-apply.
 
-resource "google_compute_target_https_proxy" "this" {
-  name             = "litellm-https"
-  url_map          = google_compute_url_map.this.id
-  ssl_certificates = [google_compute_managed_ssl_certificate.this.id]
-}
-
-resource "google_compute_global_forwarding_rule" "https" {
-  name                  = "litellm-https"
-  ip_protocol           = "TCP"
-  port_range            = "443"
-  load_balancing_scheme = "EXTERNAL_MANAGED"
-  ip_address            = google_compute_global_address.lb.address
-  target                = google_compute_target_https_proxy.this.id
-}
-```
+Result: a 443 forwarding rule with a Google-managed cert covering each
+listed domain; the 80 forwarding rule is rewritten to serve a permanent
+301 redirect to HTTPS, so any plaintext clients are automatically
+upgraded. The managed cert sits in `PROVISIONING` for ~15-60 min on first
+apply until DNS propagation completes — `gcloud compute ssl-certificates
+describe litellm-cert` shows the state.
 
 ## Files
 

@@ -44,7 +44,7 @@ resource "google_sql_database_instance" "writer" {
     }
   }
 
-  deletion_protection = false
+  deletion_protection = var.cloudsql_deletion_protection
 }
 
 resource "google_sql_database_instance" "reader" {
@@ -67,7 +67,7 @@ resource "google_sql_database_instance" "reader" {
     }
   }
 
-  deletion_protection = false
+  deletion_protection = var.cloudsql_deletion_protection
 }
 
 resource "google_sql_database" "this" {

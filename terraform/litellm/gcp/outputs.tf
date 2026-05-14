@@ -4,8 +4,8 @@ output "lb_ip" {
 }
 
 output "lb_url" {
-  description = "HTTP URL for the proxy. The dashboard is served at /, the API at /v1/*."
-  value       = "http://${google_compute_global_address.lb.address}"
+  description = "Proxy URL. Switches scheme based on whether lb_domains is set; when TLS is enabled the URL points at the first listed domain (since managed certs are tied to the hostname, not the anycast IP). The dashboard is served at /, the API at /v1/*."
+  value       = local.tls_enabled ? "https://${var.lb_domains[0]}" : "http://${google_compute_global_address.lb.address}"
 }
 
 output "gateway_service_url" {
