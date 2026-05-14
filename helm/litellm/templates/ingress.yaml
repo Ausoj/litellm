@@ -29,8 +29,14 @@
     "/mistral" "/groq" "/voyage" "/cursor" "/milvus" "/openai_passthrough"
     "/toolset"
     "/v1/realtime" "/realtime"
-    "/health" "/metrics" "/test"
+    "/health" "/metrics"
 -}}
+{{/*
+  Gateway exact paths — must mirror GATEWAY_EXACT_PATHS in
+  gateway/routes/allowlist.py. These need pathType: Exact so subpaths
+  (e.g. /test/something) fall through to the backend catch-all.
+*/}}
+{{- $gatewayExactPaths := list "/test" -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -95,6 +101,15 @@ spec:
                 port:
                   number: {{ $uiPort }}
           # --- Gateway data plane ---
+          {{- range $gatewayExactPaths }}
+          - path: {{ . }}
+            pathType: Exact
+            backend:
+              service:
+                name: {{ $gatewayName }}
+                port:
+                  number: {{ $gatewayPort }}
+          {{- end }}
           {{- range $gatewayPrefixes }}
           - path: {{ . }}
             pathType: Prefix
