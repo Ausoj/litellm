@@ -9,6 +9,11 @@ audit logs, debug, enterprise admin, and UI bootstrap helpers (logo, favicon,
 Anything LLM data-plane is dropped — those run on the gateway component.
 """
 
+## Prefixes use trailing slashes so e.g. ``"/login"`` does not silently
+## capture a future ``/login_callback`` route. Bare paths that are themselves
+## a route (``/login``, ``/audit``, ``/fallback`` …) live in
+## ``BACKEND_EXACT_PATHS`` instead, paired with a ``"/foo/"`` prefix when
+## sub-paths exist.
 BACKEND_PATH_PREFIXES: tuple[str, ...] = (
     # Identity / access
     "/key/",
@@ -21,13 +26,9 @@ BACKEND_PATH_PREFIXES: tuple[str, ...] = (
     "/customer/",
     "/end_user/",
     "/sso/",
-    "/login",
-    "/v2/login",
-    "/v3/login",
-    "/logout",
-    "/token",
+    "/v3/login/",
     "/onboarding/",
-    "/audit",
+    "/audit/",
     "/oauth/",
     "/invitation/",
     "/jwt/",
@@ -35,21 +36,16 @@ BACKEND_PATH_PREFIXES: tuple[str, ...] = (
     "/model/",
     "/v1/model/info",
     "/v2/model/",
-    "/model_group",
+    "/model_group/",
     "/model_access_group/",
     "/model_hub/",
     "/v1/access_group",
     "/access_group/",
     "/router/",
-    "/router_settings",
     "/adaptive_router/",
-    "/fallback",
-    "/fallbacks",
-    "/cache_settings",
-    "/cost_tracking",
+    "/fallback/",
     "/cost/",
-    "/credentials",
-    "/credential",
+    "/credentials/",
     "/provider/budgets",
     # Tools / agents (registry & policy admin)
     "/v1/tool/",
@@ -72,16 +68,13 @@ BACKEND_PATH_PREFIXES: tuple[str, ...] = (
     "/spend/",
     "/analytics/",
     "/global/",
-    "/user_agent",
     "/usage/",
     "/daily/",
     # Caching admin
     "/cache/",
     "/caching/",
     # Callbacks / hooks
-    "/active/callbacks",
-    "/callbacks",
-    "/team_callback",
+    "/callbacks/",
     # Alerting / email / IP allowlist
     "/alerting/",
     "/email/",
@@ -94,13 +87,10 @@ BACKEND_PATH_PREFIXES: tuple[str, ...] = (
     "/debug/",
     "/config/",
     "/memory-usage-in-mem-cache",
-    "/otel-spans",
     "/lazy/",
-    "/in_product_nudges",
     # Admin reload / schedule
     "/reload/",
     "/schedule/",
-    "/settings",
     "/update/",
     "/upload/",
     # Dev / admin utilities
@@ -113,7 +103,6 @@ BACKEND_PATH_PREFIXES: tuple[str, ...] = (
     "/litellm/.well-known/",
     "/ui_discovery/",
     "/ui-config",
-    "/sso_settings",
     "/public/",
     "/robots.txt",
     # Health (k8s probes)
@@ -128,6 +117,24 @@ BACKEND_EXACT_PATHS: frozenset[str] = frozenset(
         "/docs",
         "/docs/oauth2-redirect",
         "/redoc",
-        "/fallback/login",
+        # Bare paths that would otherwise rely on broad ``startswith`` prefixes.
+        "/login",
+        "/v2/login",
+        "/v3/login",
+        "/logout",
+        "/token",
+        "/audit",
+        "/credentials",
+        "/fallback",
+        "/active/callbacks",
+        "/team_callback",
+        "/settings",
+        "/router_settings",
+        "/cache_settings",
+        "/cost_tracking",
+        "/sso_settings",
+        "/user_agent",
+        "/otel-spans",
+        "/in_product_nudges",
     }
 )

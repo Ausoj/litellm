@@ -77,6 +77,26 @@ def test_missing_writer_envs_raises(monkeypatch):
         init_iam_db_url_from_env()
 
 
+def test_writer_url_not_clobbered_when_already_set(monkeypatch):
+    """If the operator pinned DATABASE_URL (e.g. a precomputed URL), the
+    helper must leave it untouched even though IAM_TOKEN_DB_AUTH is on. This
+    mirrors the reader path's protection of DATABASE_URL_READ_REPLICA."""
+    monkeypatch.setenv("IAM_TOKEN_DB_AUTH", "true")
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql://app:secret@writer.example.com:5432/litellm_db"
+    )
+
+    with _stub_iam_token("WRITER_TOKEN"):
+        init_iam_db_url_from_env()
+
+    import os
+
+    assert (
+        os.environ["DATABASE_URL"]
+        == "postgresql://app:secret@writer.example.com:5432/litellm_db"
+    )
+
+
 def test_reader_url_assembled_when_host_set_and_url_unset(monkeypatch):
     monkeypatch.setenv("IAM_TOKEN_DB_AUTH", "true")
     monkeypatch.setenv("DATABASE_HOST", "writer.example.com")

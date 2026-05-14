@@ -198,40 +198,47 @@ def init_iam_db_url_from_env() -> bool:
             DATABASE_SCHEMA).
 
     Sets:
-        DATABASE_URL, and DATABASE_URL_READ_REPLICA only when reader env vars
-        are present *and* DATABASE_URL_READ_REPLICA is not already set. An
-        explicit DATABASE_URL_READ_REPLICA (e.g. a non-IAM reader, or a
-        precomputed URL) is preserved as-is.
+        DATABASE_URL only when it is not already set (an explicit
+        DATABASE_URL — e.g. a precomputed URL — is preserved as-is, mirroring
+        the reader behavior). DATABASE_URL_READ_REPLICA is only minted when
+        reader env vars are present *and* DATABASE_URL_READ_REPLICA is not
+        already set.
 
     Returns:
-        True if IAM auth was enabled and at least the writer URL was
-        assembled, False if IAM auth was disabled.
+        True if IAM auth was enabled and at least one URL was assembled or
+        already present, False if IAM auth was disabled.
     """
     from litellm.secret_managers.main import get_secret_bool
 
     if not get_secret_bool("IAM_TOKEN_DB_AUTH"):
         return False
 
-    # Writer — required.
+    # Writer — required env vars are read up front so the reader fallback
+    # (below) can default missing reader values to the writer's user / name /
+    # schema even when the writer URL itself is pre-supplied.
     db_host = os.getenv("DATABASE_HOST")
     db_port = os.getenv("DATABASE_PORT", "5432")
     db_user = os.getenv("DATABASE_USER")
     db_name = os.getenv("DATABASE_NAME")
     db_schema = os.getenv("DATABASE_SCHEMA")
 
-    if not (db_host and db_user and db_name):
-        raise RuntimeError(
-            "IAM_TOKEN_DB_AUTH is set but DATABASE_HOST / DATABASE_USER / "
-            "DATABASE_NAME are required to assemble DATABASE_URL."
-        )
+    # Only mint the writer URL when DATABASE_URL is not already set, so an
+    # explicit precomputed URL is preserved as-is. This mirrors the reader
+    # path's protection of DATABASE_URL_READ_REPLICA below.
+    if not os.getenv("DATABASE_URL"):
+        if not (db_host and db_user and db_name):
+            raise RuntimeError(
+                "IAM_TOKEN_DB_AUTH is set but DATABASE_HOST / DATABASE_USER / "
+                "DATABASE_NAME are required to assemble DATABASE_URL."
+            )
 
-    os.environ["DATABASE_URL"] = _build_iam_db_url(
-        db_host=db_host,
-        db_port=db_port,
-        db_user=db_user,
-        db_name=db_name,
-        db_schema=db_schema,
-    )
+        os.environ["DATABASE_URL"] = _build_iam_db_url(
+            db_host=db_host,
+            db_port=db_port,
+            db_user=db_user,
+            db_name=db_name,
+            db_schema=db_schema,
+        )
 
     # Reader — optional and opt-in. Only minted when a reader host is
     # configured *and* DATABASE_URL_READ_REPLICA is not already set. This lets
@@ -248,6 +255,13 @@ def init_iam_db_url_from_env() -> bool:
         reader_user = os.getenv("DATABASE_USER_READ_REPLICA", db_user)
         reader_name = os.getenv("DATABASE_NAME_READ_REPLICA", db_name)
         reader_schema = os.getenv("DATABASE_SCHEMA_READ_REPLICA", db_schema)
+
+        if not (reader_user and reader_name):
+            raise RuntimeError(
+                "IAM_TOKEN_DB_AUTH with DATABASE_HOST_READ_REPLICA requires "
+                "DATABASE_USER(_READ_REPLICA) and DATABASE_NAME(_READ_REPLICA) "
+                "to assemble DATABASE_URL_READ_REPLICA."
+            )
 
         os.environ["DATABASE_URL_READ_REPLICA"] = _build_iam_db_url(
             db_host=reader_host,

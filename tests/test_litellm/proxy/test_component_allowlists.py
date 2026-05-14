@@ -74,3 +74,103 @@ def test_gateway_plus_backend_covers_full_app():
         f"Update gateway/routes/allowlist.py or backend/routes/allowlist.py to cover:\n  "
         + "\n  ".join(sorted(uncovered))
     )
+
+
+# Routes that are intentionally served by both components: docs/openapi
+# scaffolding and k8s health probes (each pod has its own). Anything else
+# appearing on both pods is almost certainly a misclassification — a
+# management route leaking onto the data-plane gateway, or vice versa.
+_ALLOWED_OVERLAP_EXACT: frozenset[str] = frozenset(
+    {
+        "/",
+        "/routes",
+        "/openapi.json",
+        "/docs",
+        "/docs/oauth2-redirect",
+        "/redoc",
+    }
+)
+
+
+def _is_allowed_overlap(path: str) -> bool:
+    return (
+        path in _ALLOWED_OVERLAP_EXACT
+        or path == "/health"
+        or path.startswith("/health/")
+    )
+
+
+def test_gateway_and_backend_do_not_overlap_unexpectedly():
+    """No route should land on both components except shared docs/health.
+
+    Catches misclassification bugs that ``test_gateway_plus_backend_covers_full_app``
+    misses: a management endpoint accidentally captured by a gateway prefix
+    (e.g. via an overly broad ``/{provider}/`` template) would be served by
+    *both* pods, silently exposing admin functionality on the data plane.
+    """
+    gateway_paths = _component_paths(
+        app.router.routes, GATEWAY_EXACT_PATHS, GATEWAY_PATH_PREFIXES
+    )
+    backend_paths = _component_paths(
+        app.router.routes, BACKEND_EXACT_PATHS, BACKEND_PATH_PREFIXES
+    )
+
+    unexpected_overlap = {
+        p for p in (gateway_paths & backend_paths) if not _is_allowed_overlap(p)
+    }
+
+    assert not unexpected_overlap, (
+        f"{len(unexpected_overlap)} route(s) are served by both gateway and "
+        "backend. Move them to exactly one allowlist (or extend "
+        "_ALLOWED_OVERLAP_EXACT if it's a deliberately shared route):\n  "
+        + "\n  ".join(sorted(unexpected_overlap))
+    )
+
+
+# Sentinel routes used to assert each component's allowlist hasn't drifted.
+# Data-plane routes must NOT be exposed on the management backend, and
+# management routes must NOT be exposed on the public gateway.
+_GATEWAY_ONLY_SENTINELS: tuple[str, ...] = (
+    "/v1/chat/completions",
+    "/chat/completions",
+    "/v1/embeddings",
+    "/v1/messages",
+    "/v1/responses",
+    "/v1/rerank",
+    "/anthropic/{endpoint:path}",
+    "/bedrock/{endpoint:path}",
+    "/vertex_ai/{endpoint:path}",
+)
+_BACKEND_ONLY_SENTINELS: tuple[str, ...] = (
+    "/key/generate",
+    "/key/delete",
+    "/user/new",
+    "/team/new",
+    "/audit",
+    "/sso/callback",
+    "/spend/logs",
+    "/v1/agents",
+    "/credentials",
+)
+
+
+def test_data_plane_routes_are_not_on_backend():
+    """LLM data-plane routes must stay off the management backend."""
+    backend_paths = _component_paths(
+        app.router.routes, BACKEND_EXACT_PATHS, BACKEND_PATH_PREFIXES
+    )
+    leaked = [p for p in _GATEWAY_ONLY_SENTINELS if p in backend_paths]
+    assert (
+        not leaked
+    ), "Data-plane routes leaked onto the backend allowlist:\n  " + "\n  ".join(leaked)
+
+
+def test_management_routes_are_not_on_gateway():
+    """Management/admin routes must stay off the public gateway."""
+    gateway_paths = _component_paths(
+        app.router.routes, GATEWAY_EXACT_PATHS, GATEWAY_PATH_PREFIXES
+    )
+    leaked = [p for p in _BACKEND_ONLY_SENTINELS if p in gateway_paths]
+    assert (
+        not leaked
+    ), "Management routes leaked onto the gateway allowlist:\n  " + "\n  ".join(leaked)

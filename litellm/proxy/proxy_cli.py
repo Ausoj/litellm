@@ -811,7 +811,7 @@ def run_server(  # noqa: PLR0915
         ### GET DB TOKEN FOR IAM AUTH ###
 
         if iam_token_db_auth or get_secret_bool("IAM_TOKEN_DB_AUTH"):
-            from litellm.proxy.auth.rds_iam_token import generate_iam_auth_token
+            from litellm.proxy.auth.rds_iam_token import _build_iam_db_url
 
             db_host = os.getenv("DATABASE_HOST")
             # Default to the Postgres standard port. Without a default,
@@ -824,16 +824,19 @@ def run_server(  # noqa: PLR0915
             db_name = os.getenv("DATABASE_NAME")
             db_schema = os.getenv("DATABASE_SCHEMA")
 
-            token = generate_iam_auth_token(
-                db_host=db_host, db_port=db_port, db_user=db_user
+            if not (db_host and db_user and db_name):
+                raise RuntimeError(
+                    "IAM_TOKEN_DB_AUTH is set but DATABASE_HOST / DATABASE_USER / "
+                    "DATABASE_NAME are required to assemble DATABASE_URL."
+                )
+
+            os.environ["DATABASE_URL"] = _build_iam_db_url(
+                db_host=db_host,
+                db_port=db_port,
+                db_user=db_user,
+                db_name=db_name,
+                db_schema=db_schema,
             )
-
-            # print(f"token: {token}")
-            _db_url = f"postgresql://{db_user}:{token}@{db_host}:{db_port}/{db_name}"
-            if db_schema:
-                _db_url += f"?schema={db_schema}"
-
-            os.environ["DATABASE_URL"] = _db_url
             os.environ["IAM_TOKEN_DB_AUTH"] = "True"
 
         ### DECRYPT ENV VAR ###
