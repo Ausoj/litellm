@@ -244,7 +244,7 @@ def init_iam_db_url_from_env() -> bool:
     # ``parse_iam_endpoint_from_url``.)
     reader_host = os.getenv("DATABASE_HOST_READ_REPLICA")
     if reader_host and not os.getenv("DATABASE_URL_READ_REPLICA"):
-        reader_port = os.getenv("DATABASE_PORT_READ_REPLICA", "5432")
+        reader_port = os.getenv("DATABASE_PORT_READ_REPLICA", db_port)
         reader_user = os.getenv("DATABASE_USER_READ_REPLICA", db_user)
         reader_name = os.getenv("DATABASE_NAME_READ_REPLICA", db_name)
         reader_schema = os.getenv("DATABASE_SCHEMA_READ_REPLICA", db_schema)

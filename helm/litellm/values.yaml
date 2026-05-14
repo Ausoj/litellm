@@ -207,11 +207,11 @@ ui:
       cpu: "1"
       memory: 1Gi
   livenessProbe:
-    httpGet: { path: /, port: http }
+    httpGet: { path: /healthz, port: http }
     initialDelaySeconds: 5
     periodSeconds: 20
   readinessProbe:
-    httpGet: { path: /, port: http }
+    httpGet: { path: /healthz, port: http }
     initialDelaySeconds: 2
     periodSeconds: 10
   hpa:
